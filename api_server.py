@@ -256,11 +256,10 @@ def vapi_webhook():
                         "result": result_content
                     })
 
+
+
             # Return the results to Vapi
-            response_payload = {
-                "results": results
-            }
-            return jsonify(response_payload), 200
+            return jsonify({"results": results}), 200
 
         return jsonify({'status': 'ignored'}), 200
 
