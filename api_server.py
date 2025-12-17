@@ -214,25 +214,25 @@ def vapi_webhook():
                     else:
                         args = function_args
 
-                    date_str = args.get('date')
-                    time_str = args.get('time')
-                    treatment_type = args.get('treatment_type')
+                    name = args.get("name")
+                    day = args.get("day")
+                    time_iso = args.get("time")
                     
-                    if not (date_str and time_str):
-                         result_content = "Error: Missing date or time."
+                    if not (day and time_iso):
+                         result_content = "Error: Missing day or time."
                     else:
                         # Book appointment logic
                         try:
                             SCOPES = ['https://www.googleapis.com/auth/calendar'] # Need write access
                             service = get_google_service('calendar', 'v3', SCOPES)
                             
-                            start_datetime_str = f"{date_str}T{time_str}:00"
+                            start_datetime_str = f"{day}T{time_iso}:00"
                             start_time = datetime.fromisoformat(start_datetime_str)
                             end_time = start_time + timedelta(hours=1)
                             
                             event = {
-                                'summary': f"Dental Appt: {treatment_type}",
-                                'description': f"Booked via Vapi Voice Agent. Treatment: {treatment_type}",
+                                'summary': f"Dental Appt: {name}",
+                                'description': f"Booked via Vapi Voice Agent. Patient: {name}",
                                 'start': {
                                     'dateTime': start_time.isoformat(),
                                     'timeZone': 'UTC', # Adjust to match user timezone ideally
@@ -244,7 +244,7 @@ def vapi_webhook():
                             }
                             
                             created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-                            result_content = f"Success! Appointment booked for {date_str} at {time_str}. Event ID: {created_event.get('id')}"
+                            result_content = f"Success! Appointment booked for {day} at {time_iso}. Event ID: {created_event.get('id')}"
                             print(f"✅ Event created: {created_event.get('htmlLink')}")
                             
                         except Exception as cal_err:
