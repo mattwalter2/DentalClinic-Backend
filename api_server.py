@@ -243,11 +243,11 @@ def vapi_webhook():
                                 'description': f"Booked via Vapi Voice Agent. Patient: {name}",
                                 'start': {
                                     'dateTime': start_time.isoformat(),
-                                    'timeZone': 'UTC', # Adjust to match user timezone ideally
+                                    'timeZone': 'America/New_York',
                                 },
                                 'end': {
                                     'dateTime': end_time.isoformat(),
-                                    'timeZone': 'UTC',
+                                    'timeZone': 'America/New_York',
                                 },
                             }
                             
