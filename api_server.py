@@ -226,8 +226,8 @@ def vapi_webhook():
                             SCOPES = ['https://www.googleapis.com/auth/calendar'] # Need write access
                             service = get_google_service('calendar', 'v3', SCOPES)
                             
-                            start_datetime_str = f"{day}T{time_iso}:00"
-                            start_time = datetime.fromisoformat(start_datetime_str)
+                            # start_datetime_str = f"{day}T{time_iso}:00"  <-- Removed
+                            start_time = datetime.fromisoformat(time_iso)
                             end_time = start_time + timedelta(hours=1)
                             
                             event = {
