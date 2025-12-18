@@ -18,7 +18,7 @@ CORS(app)  # Enable CORS for React app
 
 CLINIC_TZ = "America/New_York"
 
-@app.route('api/vapi/initiate-call', methods=['POST'])
+@app.route('/api/vapi/initiate-call', methods=['POST'])
 def initiate_call():
     try:
         data = request.json
