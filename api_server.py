@@ -535,6 +535,71 @@ def send_instagram_message():
         print(f"❌ IG Send Error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/meta/campaigns', methods=['GET'])
+def get_meta_campaigns():
+    """Fetch campaigns from Meta Ads via Backend Proxy."""
+    try:
+        access_token = os.getenv('META_ACCESS_TOKEN') or os.getenv('INSTAGRAM_ACCESS_TOKEN')
+        ad_account_id = os.getenv('META_AD_ACCOUNT_ID')
+
+        if not access_token or not ad_account_id:
+            # Fallback for demo/testing if env vars missing
+            print("⚠️ Missing Meta Ads credentials in backend.")
+            return jsonify({
+                "data": [],
+                "error": "Missing backend credentials"
+            }), 200 # Return 200 to avoid frontend crash, just empty data
+
+        # Ensure Account ID format
+        if not ad_account_id.startswith('act_'):
+            ad_account_id = f"act_{ad_account_id}"
+
+        # 1. Fetch Campaigns
+        fields = "id,name,status,effective_status,objective,spend_cap,daily_budget,lifetime_budget"
+        url = f"https://graph.facebook.com/v18.0/{ad_account_id}/campaigns"
+        params = {
+            'fields': fields,
+            'access_token': access_token,
+            'limit': 50
+        }
+        
+        print(f"Fetching Meta Campaigns for {ad_account_id}...")
+        response = requests.get(url, params=params)
+        
+        if response.status_code != 200:
+             print(f"❌ Meta API Error: {response.text}")
+             return jsonify({'error': 'Meta API Error', 'details': response.json()}), response.status_code
+
+        campaigns = response.json().get('data', [])
+
+        # 2. Fetch Insights for each campaign (simplified basic implementation)
+        # For production, you'd want to use a batch request or 'insights' edge on the account level
+        campaigns_with_insights = []
+        
+        insight_fields = "impressions,clicks,spend,ctr,cpc,cpp,cpm,reach,frequency,actions,cost_per_action_type"
+        
+        for camp in campaigns:
+            camp_id = camp.get('id')
+            ins_url = f"https://graph.facebook.com/v18.0/{camp_id}/insights"
+            ins_params = {
+                'fields': insight_fields,
+                'date_preset': 'last_30d',
+                'access_token': access_token
+            }
+            ins_res = requests.get(ins_url, params=ins_params)
+            insights_data = ins_res.json().get('data', [])
+            
+            # Attach insights directly to campaign object
+            camp['insights'] = insights_data[0] if insights_data else {}
+            campaigns_with_insights.append(camp)
+
+        return jsonify({'data': campaigns_with_insights}), 200
+
+    except Exception as e:
+        print(f"❌ Meta Proxy Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/messages', methods=['GET'])
 def get_messages():
     """Fetch all stored messages."""
