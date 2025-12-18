@@ -11,7 +11,10 @@ from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
 # Load environment variables from parent directory
+# Load environment variables from parent directory
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+# Also load from current directory (overrides parent if present)
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React app
@@ -540,8 +543,13 @@ def send_instagram_message():
 def get_meta_campaigns():
     """Fetch campaigns from Meta Ads via Backend Proxy."""
     try:
-        access_token = os.getenv('META_ACCESS_TOKEN') or os.getenv('INSTAGRAM_ACCESS_TOKEN')
-        ad_account_id = os.getenv('META_AD_ACCOUNT_ID')
+        # Check standard and VITE_ prefixed variables (in case user copied frontend env)
+        access_token = (
+            os.getenv('VITE_VITE_META_ACCESS_TOKEN') or 
+            os.getenv('VITE_INSTAGRAM_ACCESS_TOKEN')
+        )
+        
+        ad_account_id = os.getenv('VITE_VITE_META_AD_ACCOUNT_ID')
 
         if not access_token or not ad_account_id:
             # Fallback for demo/testing if env vars missing
@@ -567,11 +575,17 @@ def get_meta_campaigns():
         print(f"Fetching Meta Campaigns for {ad_account_id}...")
         response = requests.get(url, params=params)
         
+        # DEBUG LOGGING
+        print(f"DEBUG: Meta Response Code: {response.status_code}")
+        print(f"DEBUG: Meta Response Body: {response.text}")
+
         if response.status_code != 200:
              print(f"❌ Meta API Error: {response.text}")
              return jsonify({'error': 'Meta API Error', 'details': response.json()}), response.status_code
 
-        campaigns = response.json().get('data', [])
+        data = response.json()
+        campaigns = data.get('data', [])
+        print(f"DEBUG: Found {len(campaigns)} campaigns")
 
         # 2. Fetch Insights for each campaign (simplified basic implementation)
         # For production, you'd want to use a batch request or 'insights' edge on the account level
