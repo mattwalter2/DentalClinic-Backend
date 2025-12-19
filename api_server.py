@@ -448,36 +448,54 @@ def whatsapp_webhook():
                 return 'Forbidden', 403
         
         data = request.json
-        print(f"📩 WhatsApp Webhook: {data}")
+        print(f"📩 Webhook Received: {data}")
         
-        # Check if it's a message
-        if 'entry' in data:
-            for entry in data['entry']:
-                for change in entry.get('changes', []):
-                    value = change.get('value', {})
-                    if 'messages' in value:
-                        for msg in value['messages']:
-                            # Extract useful info
-                            from_number = msg.get('from')
-                            msg_body = msg.get('text', {}).get('body', '')
-                            timestamp = msg.get('timestamp')
-                            
-                            # Create a simplified message object
-                            new_msg = {
-                                'id': msg.get('id'),
-                                'platform': 'whatsapp',
-                                'sender': value.get('contacts', [{}])[0].get('profile', {}).get('name', from_number),
-                                'from': from_number,
-                                'text': msg_body,
-                                'time': 'Just now', # You should parse timestamp
-                                'avatar': '',
-                                'unread': True
-                            }
-                            
-                            messages_store.insert(0, new_msg) # Add to start of list
-                            print(f"✅ Saved WhatsApp message: {msg_body}")
+        # 2. Check Object Type (WhatsApp vs Instagram)
+        obj_type = data.get('object')
+        
+        if obj_type == 'instagram':
+             # Route to Instagram Logic
+             if 'entry' in data:
+                 for entry in data['entry']:
+                     if 'messaging' in entry:
+                         for msg in entry['messaging']:
+                             process_instagram_event(msg)
+             return 'EVENT_RECEIVED', 200
 
-        return 'EVENT_RECEIVED', 200
+        elif obj_type == 'whatsapp_business_account':
+            # Route to WhatsApp Logic (Existing)
+            if 'entry' in data:
+                for entry in data['entry']:
+                    for change in entry.get('changes', []):
+                        value = change.get('value', {})
+                        if 'messages' in value:
+                            for msg in value['messages']:
+                                # Extract useful info
+                                from_number = msg.get('from')
+                                msg_body = msg.get('text', {}).get('body', '')
+                                timestamp = msg.get('timestamp')
+                                
+                                # Create a simplified message object
+                                new_msg = {
+                                    'id': msg.get('id'),
+                                    'platform': 'whatsapp',
+                                    'sender': value.get('contacts', [{}])[0].get('profile', {}).get('name', from_number),
+                                    'from': from_number,
+                                    'text': msg_body,
+                                    'time': 'Just now', 
+                                    'avatar': '',
+                                    'unread': True
+                                }
+                                
+                                messages_store.insert(0, new_msg) # Add to start of list
+                                print(f"✅ Saved WhatsApp message: {msg_body}")
+
+            return 'EVENT_RECEIVED', 200
+        
+        else:
+            # Unknown object
+            print(f"❓ Unknown webhook object: {obj_type}")
+            return 'Not Found', 404
     except Exception as e:
         print(f"❌ WhatsApp Webhook Error: {e}")
         return 'Internal Server Error', 500
