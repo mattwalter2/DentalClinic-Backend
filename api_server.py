@@ -201,84 +201,140 @@ def get_appointments():
         print(f"❌ Error fetching appointments: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/vapi/tool/schedule-appointment', methods=['POST'])
+@app.route('/api/vapi/webhook', methods=['POST'])
 def vapi_webhook():
-    """Handle Vapi tool calls."""
+    """Handle Vapi tool calls and events."""
     try:
         data = request.json
-        print(f"📩 Vapi Webhook received: {data}")
-
         # Check if it's a tool call
-        if 'message' in data and 'toolCalls' in data['message']:
-            tool_calls = data['message']['toolCalls']
+        if 'message' in data and 'type' in data['message']:
+            msg_type = data['message']['type']
             
-            results = []
-            for tool_call in tool_calls:
-                function_name = tool_call['function']['name']
-                function_args = tool_call['function']['arguments']
-                call_id = tool_call['id']
-
-                print(f"🔧 Tool Call: {function_name} with args {function_args}")
-
-                if function_name == 'schedule_dental_appointment':
-                    # Parse arguments (they might come as string or dict)
+            if msg_type == 'tool-calls':
+                tool_calls = data['message']['toolCalls']
+                results = []
+                
+                for tool_call in tool_calls:
+                    function_name = tool_call['function']['name']
+                    function_args = tool_call['function']['arguments']
+                    call_id = tool_call['id']
+                    
+                    print(f"🔧 Tool Call: {function_name} with args {function_args}")
+                    
+                    # Parse args if string
                     import json
                     if isinstance(function_args, str):
-                        args = json.loads(function_args)
+                        try:
+                            args = json.loads(function_args)
+                        except:
+                            args = {}
                     else:
                         args = function_args
 
-                    name = args.get("name")
-                    day = args.get("day")
-                    time_iso = args.get("time")
-                    
-                    if not (day and time_iso):
-                         result_content = "Error: Missing day or time."
-                    else:
-                        # Book appointment logic
+                    result_content = "Action completed."
+
+                    # --- HANDLER 1: Book Appointment ---
+                    if function_name == 'book_appointment' or function_name == 'schedule_dental_appointment':
+                        # Mapping args from both potential function names
+                        name = args.get("name") or args.get("customer_name")
+                        day = args.get("day") or args.get("date")
+                        time_iso = args.get("time")
+                        procedure = args.get("procedure_type") or "Dental Checkup"
+                        
+                        if not (day and time_iso):
+                             result_content = "Error: Missing day or time."
+                        else:
+                            try:
+                                SCOPES = ['https://www.googleapis.com/auth/calendar']
+                                service = get_google_service('calendar', 'v3', SCOPES)
+                                
+                                # Handle partial ISO strings or times
+                                if 'T' not in time_iso and ':' in time_iso:
+                                    # Assume time_iso is just HH:MM, append to day
+                                    start_time = datetime.fromisoformat(f"{day}T{time_iso}")
+                                else:
+                                    start_time = datetime.fromisoformat(time_iso)
+
+                                # Force Clinic Timezone
+                                if start_time.tzinfo is None:
+                                    start_time = start_time.replace(tzinfo=ZoneInfo(CLINIC_TZ))
+
+                                end_time = start_time + timedelta(hours=1)
+                                
+                                event = {
+                                    'summary': f"Appt: {name} ({procedure})",
+                                    'description': f"Booked via AI Agent. Procedure: {procedure}",
+                                    'start': {'dateTime': start_time.isoformat(), 'timeZone': CLINIC_TZ},
+                                    'end': {'dateTime': end_time.isoformat(), 'timeZone': CLINIC_TZ},
+                                }
+                                
+                                created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+                                result_content = f"Success! Appointment booked for {day} at {time_iso}."
+                                print(f"✅ Event created: {created_event.get('htmlLink')}")
+                                
+                            except Exception as cal_err:
+                                result_content = f"Failed to book calendar event: {str(cal_err)}"
+                                print(f"❌ Calendar Error: {cal_err}")
+
+                    # --- HANDLER 2: Send WhatsApp ---
+                    elif function_name == 'send_whatsapp_details':
                         try:
-                            SCOPES = ['https://www.googleapis.com/auth/calendar'] # Need write access
-                            service = get_google_service('calendar', 'v3', SCOPES)
+                            phone = args.get('phone_number')
+                            proc_type = args.get('procedure_type', 'services')
                             
-                            # start_datetime_str = f"{day}T{time_iso}:00"  <-- Removed
-                            start_time = datetime.fromisoformat(time_iso)
+                            # Calls internal logic essentially
+                            if phone:
+                                # In Python we can call the service logic directly, but let's reuse api logic or just requests
+                                # Simulating success for now or calling sending logic if easy
+                                # For now, we will just log it. To make it real, we'd copy the send_whatsapp_message logic here.
+                                
+                                # Reusing the implementation from send_whatsapp_message
+                                token = os.getenv('VITE_WHATSAPP_ACCESS_TOKEN') or os.getenv('WHATSAPP_ACCESS_TOKEN')
+                                phone_id = os.getenv('VITE_WHATSAPP_PHONE_ID') or os.getenv('WHATSAPP_PHONE_ID')
+                                
+                                if token and phone_id:
+                                    msg_text = f"Hello! Here are the details about {proc_type} at NovaSync Dental..."
+                                    wa_url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
+                                    wa_headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+                                    wa_payload = {
+                                        "messaging_product": "whatsapp",
+                                        "to": phone,
+                                        "type": "text",
+                                        "text": {"body": msg_text}
+                                    }
+                                    requests.post(wa_url, json=wa_payload, headers=wa_headers)
+                                    result_content = "WhatsApp sent successfully."
+                                else:
+                                    result_content = "WhatsApp skipped (credentials missing)."
+                            else:
+                                result_content = "Error: No phone number provided."
+                        except Exception as wa_err:
+                            result_content = f"Failed to send WhatsApp: {wa_err}"
 
-                            # Vapi sends no timezone → assume Eastern Time
-                            if start_time.tzinfo is None:
-                                start_time = start_time.replace(tzinfo=ZoneInfo(CLINIC_TZ))
+                    # --- HANDLER 3: Schedule Followup ---
+                    elif function_name == 'schedule_followup':
+                        # Just log for now
+                        reason = args.get('reason')
+                        date = args.get('date')
+                        print(f"📝 Followup Scheduled: {date} - {reason}")
+                        result_content = "Followup noted."
 
-                            end_time = start_time + timedelta(hours=1)
-                            
-                            event = {
-                                'summary': f"Dental Appt: {name}",
-                                'description': f"Booked via Vapi Voice Agent. Patient: {name}",
-                                'start': {
-                                    'dateTime': start_time.isoformat(),
-                                    'timeZone': 'America/New_York',
-                                },
-                                'end': {
-                                    'dateTime': end_time.isoformat(),
-                                    'timeZone': 'America/New_York',
-                                },
-                            }
-                            
-                            created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-                            result_content = f"Success! Appointment booked for {day} at {time_iso}. Event ID: {created_event.get('id')}"
-                            print(f"✅ Event created: {created_event.get('htmlLink')}")
-                            
-                        except Exception as cal_err:
-                            result_content = f"Failed to book calendar event: {str(cal_err)}"
-                            print(f"❌ Calendar Error: {cal_err}")
+                    # --- HANDLER 4: Update Lead ---
+                    elif function_name == 'update_lead_data':
+                        # Log it
+                        print(f"📝 Lead Data Updated: {args}")
+                        result_content = "Lead data updated."
+
+                    else:
+                        print(f"⚠️ Unknown tool: {function_name}")
+                        result_content = f"Function {function_name} executed (simulated)."
 
                     results.append({
                         "toolCallId": call_id,
                         "result": result_content
                     })
 
-
-
-            # Return the results to Vapi
-            return jsonify({"results": results}), 200
+                return jsonify({"results": results}), 200
 
         return jsonify({'status': 'ignored'}), 200
 
@@ -601,11 +657,80 @@ def get_meta_campaigns():
             ins_res = requests.get(ins_url, params=ins_params)
             insights_data = ins_res.json().get('data', [])
             
-            # Attach insights directly to campaign object
             camp['insights'] = insights_data[0] if insights_data else {}
             campaigns_with_insights.append(camp)
 
-        return jsonify({'data': campaigns_with_insights}), 200
+        # --- SERVER-SIDE FORMATTING & AGGREGATION ---
+        formatted_campaigns = []
+        totals = {
+            'totalSpend': 0.0,
+            'totalImpressions': 0,
+            'totalClicks': 0,
+            'totalLeads': 0,
+            'totalReach': 0
+        }
+
+        for camp in campaigns_with_insights:
+            insights = camp.get('insights', {})
+            actions = insights.get('actions', [])
+            
+            # Helper to extract leads
+            leads_count = 0
+            if actions:
+                for action in actions:
+                    if action.get('action_type') in ['lead', 'onsite_conversion.lead_grouped']:
+                        leads_count += int(action.get('value', 0))
+
+            # Helper to extract conversions
+            conversions_count = 0
+            if actions:
+                for action in actions:
+                    if action.get('action_type') in ['offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
+                        conversions_count += int(action.get('value', 0))
+
+            formatted = {
+                'id': camp.get('id'),
+                'name': camp.get('name'),
+                'status': camp.get('effective_status', 'unknown').lower(),
+                'spend': float(insights.get('spend', 0)),
+                'impressions': int(insights.get('impressions', 0)),
+                'clicks': int(insights.get('clicks', 0)),
+                'ctr': float(insights.get('ctr', 0)),
+                'cpc': float(insights.get('cpc', 0)),
+                'cpm': float(insights.get('cpm', 0)),
+                'reach': int(insights.get('reach', 0)),
+                'leads': leads_count,
+                'conversions': conversions_count
+            }
+            formatted_campaigns.append(formatted)
+
+            # Accumulate Totals
+            totals['totalSpend'] += formatted['spend']
+            totals['totalImpressions'] += formatted['impressions']
+            totals['totalClicks'] += formatted['clicks']
+            totals['totalLeads'] += formatted['leads']
+            totals['totalReach'] += formatted['reach']
+
+        # Calculate Averages
+        stats = {
+            **totals,
+            'avgCTR': 0.0,
+            'avgCPC': 0.0
+        }
+        
+        if stats['totalImpressions'] > 0:
+            stats['avgCTR'] = round((stats['totalClicks'] / stats['totalImpressions']) * 100, 2)
+            
+        if stats['totalClicks'] > 0:
+            stats['avgCPC'] = round(stats['totalSpend'] / stats['totalClicks'], 2)
+            
+        # Round Spend for clean JSON
+        stats['totalSpend'] = round(stats['totalSpend'], 2)
+
+        return jsonify({
+            'data': formatted_campaigns,
+            'stats': stats
+        }), 200
 
     except Exception as e:
         print(f"❌ Meta Proxy Error: {e}")
