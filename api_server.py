@@ -539,6 +539,8 @@ def instagram_webhook():
                          if 'messages' in val:
                              for m in val['messages']:
                                  process_instagram_message_value(m)
+
+                                 
                                  
         return 'EVENT_RECEIVED', 200
     except Exception as e:
@@ -570,6 +572,11 @@ def process_instagram_event(msg):
         }
         messages_store.insert(0, new_msg)
         print(f"✅ Saved Instagram message: {text}")
+
+def process_instagram_message_value(msg):
+    """Handle IG messages coming from 'changes' payload"""
+    # Reuse valid logic
+    process_instagram_event(msg)
 
 @app.route('/api/instagram/send', methods=['POST'])
 def send_instagram_message():
