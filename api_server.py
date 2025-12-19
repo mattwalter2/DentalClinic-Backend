@@ -50,6 +50,9 @@ def initiate_call():
         payload = {
             'assistantId': assistant_id,
             'phoneNumberId': phone_number_id,
+              "customer": {
+    "number": "+1{{ $json.Phone }}"
+  },
             "assistantOverrides": {
                 "variableValues": {
                     "name": name,
